@@ -67,6 +67,7 @@
   }
   .seg { display: flex; background: rgba(0,0,0,.3); border: 1px solid var(--bd); border-radius: 9px; padding: 2px; flex: 1; }
   .seg button { flex: 1; border: 0; background: transparent; padding: 7px 4px; justify-content: center; }
+  #motionSeg button { flex: 1 0 30%; }
   .seg button.on { background: #1f6feb; color: #fff; font-weight: 600; }
   .row { display: flex; gap: 8px; align-items: center; margin-bottom: 9px; }
   .sliders { display: grid; grid-template-columns: 1fr; gap: 2px 18px; }
@@ -115,6 +116,16 @@
     </div>
   </div>
   <div class="row">
+    <div class="seg" id="motionSeg" style="flex-wrap:wrap">
+      <button data-motion="0" class="on">🎏 飄動</button>
+      <button data-motion="1">🎐 擺動</button>
+      <button data-motion="2">💗 呼吸</button>
+      <button data-motion="3">💧 漣漪</button>
+      <button data-motion="4">🏀 彈跳</button>
+      <button data-motion="5">✨ 閃光</button>
+    </div>
+  </div>
+  <div class="row">
     <div class="seg" id="maskSeg">
       <button data-mask="0" class="on">全圖飄動</button>
       <button data-mask="1">只動塗抹區</button>
@@ -144,6 +155,7 @@
   var S = {
     imgW: 900, imgH: 1200,
     anchor: [0.16, 0.9],          // 圖片座標（x 向右，y 向上）
+    motion: 0,                    // 0飄動 1擺動 2呼吸 3漣漪 4彈跳 5閃光
     mode: 'anchor',               // anchor | paint | erase
     maskOn: false,
     brush: 7,                     // 筆刷半徑，圖片高度的 %
@@ -198,6 +210,7 @@
     'uniform float uMaskOn;',
     'uniform float uShowMask;',
     'uniform float uReach;',
+    'uniform float uMotion;',
     'uniform vec2 uAnchor;',
     '',
     'float wave(float s) {',
@@ -229,13 +242,36 @@
     '            + radial * ripple * uAmp * 0.3',
     '            + wind * uAmp * (0.5 + 0.5 * sin(uPh * 0.31));',
     '  disp *= grow * gust;',
+    '  float glow = 1.0;',
+    '  if (uMotion > 0.5) {',
+    '    float t = uPh;',
+    '    vec2 srcP = P;',
+    '    if (uMotion < 1.5) {',                                   // 擺動：繞固定點來回轉
+    '      float th = sin(t * 0.5) * uAmp * 3.0;',
+    '      float cs = cos(th), sn = sin(th);',
+    '      srcP = A + vec2(cs * d.x + sn * d.y, -sn * d.x + cs * d.y);',
+    '    } else if (uMotion < 2.5) {',                            // 呼吸：以固定點為中心脹縮
+    '      float sc = 1.0 + sin(t * 0.6) * uAmp * 2.5;',
+    '      srcP = A + d / sc;',
+    '    } else if (uMotion < 3.5) {',                            // 漣漪：水波由固定點往外擴散
+    '      float fall = 1.0 - 0.5 * smoothstep(0.0, 1.2, dist);',
+    '      srcP = P - radial * sin(dist * uFreq * 1.6 - t * 1.6) * uAmp * 0.8 * fall',
+    '               - perp * sin(dist * uFreq * 1.1 - t * 1.2 + 1.0) * uAmp * 0.3 * fall;',
+    '    } else if (uMotion < 4.5) {',                            // 彈跳：上下跳動並微微壓扁
+    '      float h = abs(sin(t * 0.7));',
+    '      srcP = A + vec2(d.x * (1.0 + 0.35 * h * uAmp * 6.0), d.y) - vec2(0.0, h * uAmp * 2.5);',
+    '    } else {',                                               // 閃光：只有亮度脈動
+    '      glow = 1.0 + (0.5 + 0.5 * sin(t * 0.9)) * uAmp * 4.0 * (0.4 + 0.6 * uShade);',
+    '    }',
+    '    disp = P - srcP;',
+    '  }',
     '',
     '  vec2 src = uv - vec2(disp.x / uAspect, disp.y) * m;',
     '  float m2 = mix(1.0, texture2D(uMask, src).r, uMaskOn);',
     '  src = mix(uv, src, m2);',
     '',
     '  float slope = (wave(dist + 0.02) - w) / 0.02 / uFreq;',
-    '  float shade = 1.0 + uShade * clamp(slope, -1.0, 1.0) * 0.28 * grow * m;',
+    '  float shade = (uMotion < 0.5) ? 1.0 + uShade * clamp(slope, -1.0, 1.0) * 0.28 * grow * m : 1.0 + (glow - 1.0) * m;',
     '',
     '  vec3 col = texture2D(uImg, clamp(src, 0.0, 1.0)).rgb * shade;',
     '  col = mix(col, vec3(1.0, 0.25, 0.35), 0.38 * rawM * uShowMask);',
@@ -272,7 +308,7 @@
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
   var U = {};
-  ['uImg', 'uMask', 'uPh', 'uAspect', 'uAmp', 'uFreq', 'uWind', 'uShade', 'uMaskOn', 'uShowMask', 'uReach', 'uAnchor']
+  ['uImg', 'uMask', 'uPh', 'uAspect', 'uAmp', 'uFreq', 'uWind', 'uShade', 'uMaskOn', 'uShowMask', 'uReach', 'uMotion', 'uAnchor']
     .forEach(function (n) { U[n] = gl.getUniformLocation(prog, n); });
 
   function makeTex(unit) {
@@ -566,6 +602,13 @@
     S.maskOn = !!on;
     Array.prototype.forEach.call($('maskSeg').children, function (b) { b.classList.toggle('on', (b.dataset.mask === '1') === S.maskOn); });
   }
+  var MHINT = ['飄動：像旗子一樣隨風波動（離固定點越遠越明顯）', '擺動：繞固定點像鐘擺來回搖', '呼吸：以固定點為中心一脹一縮', '漣漪：水波從固定點往外擴散', '彈跳：整體上下跳動、微微壓扁（固定點為水平中心）', '閃光：只有亮度忽明忽暗'];
+  function setMotion(i) {
+    S.motion = i;
+    Array.prototype.forEach.call($('motionSeg').children, function (b) { b.classList.toggle('on', +b.dataset.motion === i); });
+    toast(MHINT[i]);
+  }
+  $('motionSeg').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setMotion(+b.dataset.motion); });
   $('modeSeg').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setMode(b.dataset.mode); });
   $('maskSeg').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setMaskOn(b.dataset.mask === '1'); });
   $('clearMask').addEventListener('click', function () { resetMask(); toast('已清除塗抹範圍'); });
@@ -606,6 +649,7 @@
     gl.uniform1f(U.uMaskOn, S.maskOn ? 1 : 0);
     gl.uniform1f(U.uShowMask, (S.mode !== 'anchor' && S.maskOn && !recording) ? 1 : 0);
     gl.uniform1f(U.uReach, 0.85);
+    gl.uniform1f(U.uMotion, S.motion);
     gl.uniform2f(U.uAnchor, S.anchor[0], S.anchor[1]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
@@ -654,7 +698,7 @@
   setMode('anchor');
   loadDemo();
   requestAnimationFrame(frame);
-  window.__ribbon = { S: S, setMode: setMode };  // 方便除錯／自動測試
+  window.__ribbon = { S: S, setMode: setMode, setMotion: setMotion };  // 方便除錯／自動測試
 })();
 </script>
 <script>

@@ -1,5 +1,5 @@
 // 更新 App 內容時，記得把 VERSION 加一，舊快取才會被清掉
-const VERSION = 'ribbon-v4';
+const VERSION = 'ribbon-v5';
 const FILES = ['./', 'index.html', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
