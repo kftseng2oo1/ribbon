@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>飄帶隨風</title>
+<meta name="theme-color" content="#121a2e">
+<meta name="apple-mobile-web-app-title" content="飄帶">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #0b1020; --bar: #121a2e; --bd: #24324f;
+    --tx: #e8eef9; --mu: #8393b0; --ac: #35d0ff; --warn: #ff6b81;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--tx);
+    font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh; overflow: hidden; overscroll-behavior: none;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: calc(9px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 9px calc(12px + env(safe-area-inset-left)); background: var(--bar); border-bottom: 1px solid var(--bd); flex-shrink: 0;
+  }
+  .title { font-weight: 700; font-size: 1rem; white-space: nowrap; }
+  .head-btns { display: flex; gap: 6px; }
+  button, .filebtn {
+    font: inherit; font-size: .82rem; cursor: pointer; color: var(--tx);
+    background: rgba(255,255,255,.07); border: 1px solid var(--bd); border-radius: 8px;
+    padding: 7px 11px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: linear-gradient(135deg, #22d3ee, #6366f1); border: none; font-weight: 600; }
+  button.rec { background: #7f1d1d; border-color: #b91c1c; }
+  input[type=file] { display: none; }
+
+  #hint { padding: 6px 12px; font-size: .75rem; color: var(--mu); text-align: center; flex-shrink: 0; min-height: 28px; }
+
+  #stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #stage.drag { outline: 2px dashed var(--ac); outline-offset: -8px; }
+  canvas { touch-action: none; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); background: #000; display: block; }
+  #marker {
+    position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+    border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 0 12px rgba(53,208,255,.9);
+    pointer-events: none; background: rgba(53,208,255,.35);
+  }
+  #toast {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    background: rgba(0,0,0,.8); color: #fff; padding: 8px 14px; border-radius: 20px; font-size: .8rem;
+    max-width: 88%; text-align: center; display: none; z-index: 5; pointer-events: none;
+  }
+
+  #panel {
+    flex-shrink: 0; background: var(--bar); border-top: 1px solid var(--bd);
+    padding: 10px 12px 12px; max-height: 44vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .seg { display: flex; background: rgba(0,0,0,.3); border: 1px solid var(--bd); border-radius: 9px; padding: 2px; flex: 1; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 4px; justify-content: center; }
+  .seg button.on { background: #1f6feb; color: #fff; font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 9px; }
+  .sliders { display: grid; grid-template-columns: 1fr; gap: 2px 18px; }
+  @media (min-width: 720px) { .sliders { grid-template-columns: 1fr 1fr; } }
+  .sl { display: grid; grid-template-columns: 4.6em 1fr 3.2em; align-items: center; gap: 8px; font-size: .8rem; color: var(--mu); padding: 4px 0; }
+  .sl output { text-align: right; color: var(--tx); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--ac); height: 28px; }
+
+  #modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none; z-index: 20;
+    flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px;
+  }
+  #modal video { max-width: 100%; max-height: 66vh; border-radius: 8px; background: #000; }
+  #modal .tip { color: #cbd5e1; font-size: .8rem; text-align: center; }
+  #modal a.dl { text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">🎏 飄帶隨風</div>
+  <div class="head-btns">
+    <label class="filebtn primary" style="background:linear-gradient(135deg,#22d3ee,#6366f1);border:none;font-weight:600">
+      📷 載入照片<input type="file" id="file" accept="image/*">
+    </label>
+    <button id="playBtn">⏸</button>
+    <button id="recBtn" class="rec">🎬 錄影</button>
+  </div>
+</header>
+
+<div id="hint"></div>
+
+<div id="stage">
+  <canvas id="gl"></canvas>
+  <div id="marker"></div>
+  <div id="toast"></div>
+</div>
+
+<div id="panel">
+  <div class="row">
+    <div class="seg" id="modeSeg">
+      <button data-mode="anchor" class="on">📍 固定點</button>
+      <button data-mode="paint">🖌 塗抹飄帶</button>
+      <button data-mode="erase">🧽 擦除</button>
+    </div>
+  </div>
+  <div class="row">
+    <div class="seg" id="maskSeg">
+      <button data-mask="0" class="on">全圖飄動</button>
+      <button data-mask="1">只動塗抹區</button>
+    </div>
+    <button id="clearMask">清除塗抹</button>
+  </div>
+  <div class="sliders" id="sliders"></div>
+</div>
+
+<div id="modal">
+  <video id="vid" controls playsinline loop></video>
+  <div class="row" style="margin:0">
+    <a class="dl" id="dl"><button class="primary">⬇ 下載影片</button></a>
+    <button id="closeModal">關閉</button>
+  </div>
+  <div class="tip">iPhone：也可以長按影片 → 儲存，或用分享鈕傳到 LINE</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var canvas = $('gl'), stage = $('stage'), marker = $('marker'), toastEl = $('toast'), hintEl = $('hint');
+
+  // ── 狀態 ────────────────────────────────────────────
+  var S = {
+    imgW: 900, imgH: 1200,
+    anchor: [0.16, 0.9],          // 圖片座標（x 向右，y 向上）
+    mode: 'anchor',               // anchor | paint | erase
+    maskOn: false,
+    brush: 7,                     // 筆刷半徑，圖片高度的 %
+    playing: true,
+    phase: 0,
+    v: { amp: 55, speed: 50, freq: 45, wind: 20, shade: 60 }
+  };
+  var SLIDERS = [
+    { k: 'amp',   t: '風力',     max: 100, f: function (v) { return v + '%'; } },
+    { k: 'speed', t: '速度',     max: 100, f: function (v) { return v + '%'; } },
+    { k: 'freq',  t: '波紋密度', max: 100, f: function (v) { return v + '%'; } },
+    { k: 'wind',  t: '風向',     max: 360, f: function (v) { return v + '°'; } },
+    { k: 'shade', t: '布面光影', max: 100, f: function (v) { return v + '%'; } }
+  ];
+
+  var HINTS = {
+    anchor: '點一下照片，選擇飄帶被「固定」的那一端（離它越遠，擺動越大）',
+    paint: '用手指塗抹飄帶（紅色 = 會飄動的範圍）',
+    erase: '擦掉不該動的地方（例如背景）'
+  };
+
+  function toast(msg, ms) {
+    toastEl.textContent = msg; toastEl.style.display = 'block';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { toastEl.style.display = 'none'; }, ms || 2600);
+  }
+
+  // ── WebGL ───────────────────────────────────────────
+  var gl = canvas.getContext('webgl', { antialias: false, alpha: false, preserveDrawingBuffer: true }) ||
+           canvas.getContext('experimental-webgl', { antialias: false, alpha: false, preserveDrawingBuffer: true });
+  if (!gl) {
+    hintEl.textContent = '❌ 這個瀏覽器不支援 WebGL，無法執行動畫';
+    return;
+  }
+
+  var VS = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }';
+  var FS = [
+    '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+    'precision highp float;',
+    '#else',
+    'precision mediump float;',
+    '#endif',
+    'varying vec2 vUv;',
+    'uniform sampler2D uImg;',
+    'uniform sampler2D uMask;',
+    'uniform float uPh;',
+    'uniform float uAspect;',
+    'uniform float uAmp;',
+    'uniform float uFreq;',
+    'uniform float uWind;',
+    'uniform float uShade;',
+    'uniform float uMaskOn;',
+    'uniform float uShowMask;',
+    'uniform float uReach;',
+    'uniform vec2 uAnchor;',
+    '',
+    'float wave(float s) {',
+    '  float a = sin(s * uFreq - uPh);',
+    '  float b = 0.5 * sin(s * uFreq * 2.3 - uPh * 1.6 + 1.7);',
+    '  float c = 0.25 * sin(s * uFreq * 4.1 - uPh * 2.4 + 4.2);',
+    '  return (a + b + c) / 1.75;',
+    '}',
+    '',
+    'void main() {',
+    '  vec2 uv = vUv;',
+    '  vec2 P = vec2(uv.x * uAspect, uv.y);',
+    '  vec2 A = vec2(uAnchor.x * uAspect, uAnchor.y);',
+    '  vec2 d = P - A;',
+    '  float dist = length(d);',
+    '  vec2 radial = d / max(dist, 0.0001);',
+    '  vec2 perp = vec2(-radial.y, radial.x);',
+    '',
+    '  float rawM = texture2D(uMask, uv).r;',
+    '  float m = mix(1.0, rawM, uMaskOn);',
+    '  float grow = pow(smoothstep(0.0, uReach, dist), 1.3);',
+    '  float gust = 0.8 + 0.2 * sin(uPh * 0.23) + 0.1 * sin(uPh * 0.57 + 2.0);',
+    '',
+    '  float w = wave(dist);',
+    '  float across = dot(d, perp);',
+    '  float ripple = sin(across * uFreq * 0.8 + dist * uFreq * 0.6 - uPh * 1.3);',
+    '  vec2 wind = vec2(cos(uWind), sin(uWind));',
+    '  vec2 disp = perp * w * uAmp',
+    '            + radial * ripple * uAmp * 0.3',
+    '            + wind * uAmp * (0.5 + 0.5 * sin(uPh * 0.31));',
+    '  disp *= grow * gust;',
+    '',
+    '  vec2 src = uv - vec2(disp.x / uAspect, disp.y) * m;',
+    '  float m2 = mix(1.0, texture2D(uMask, src).r, uMaskOn);',
+    '  src = mix(uv, src, m2);',
+    '',
+    '  float slope = (wave(dist + 0.02) - w) / 0.02 / uFreq;',
+    '  float shade = 1.0 + uShade * clamp(slope, -1.0, 1.0) * 0.28 * grow * m;',
+    '',
+    '  vec3 col = texture2D(uImg, clamp(src, 0.0, 1.0)).rgb * shade;',
+    '  col = mix(col, vec3(1.0, 0.25, 0.35), 0.38 * rawM * uShowMask);',
+    '  gl_FragColor = vec4(col, 1.0);',
+    '}'
+  ].join('\n');
+
+  function compile(type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  var prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  } catch (e) {
+    hintEl.textContent = '❌ 著色器編譯失敗：' + e.message;
+    return;
+  }
+  gl.useProgram(prog);
+
+  var buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  var aPos = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  var U = {};
+  ['uImg', 'uMask', 'uPh', 'uAspect', 'uAmp', 'uFreq', 'uWind', 'uShade', 'uMaskOn', 'uShowMask', 'uReach', 'uAnchor']
+    .forEach(function (n) { U[n] = gl.getUniformLocation(prog, n); });
+
+  function makeTex(unit) {
+    var t = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  var imgTex = makeTex(0), maskTex = makeTex(1);
+  gl.uniform1i(U.uImg, 0);
+  gl.uniform1i(U.uMask, 1);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+  function upload(unit, tex, source) {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  }
+
+  // ── 遮罩（2D canvas，白 = 會動）─────────────────────────
+  var mask = document.createElement('canvas'), mctx = mask.getContext('2d');
+  var maskDirty = true;
+
+  function resetMask() {
+    var k = 768 / Math.max(S.imgW, S.imgH);
+    mask.width = Math.max(2, Math.round(S.imgW * k));
+    mask.height = Math.max(2, Math.round(S.imgH * k));
+    mctx.fillStyle = '#000'; mctx.fillRect(0, 0, mask.width, mask.height);
+    maskDirty = true;
+  }
+
+  var lastPt = null;
+  function stamp(x, y, erase) {
+    var rad = (S.brush / 100) * mask.height;
+    var c = erase ? '0,0,0' : '255,255,255';
+    var g = mctx.createRadialGradient(x, y, rad * 0.35, x, y, rad);
+    g.addColorStop(0, 'rgba(' + c + ',1)');
+    g.addColorStop(1, 'rgba(' + c + ',0)');
+    mctx.fillStyle = g;
+    mctx.beginPath(); mctx.arc(x, y, rad, 0, Math.PI * 2); mctx.fill();
+  }
+  function paintTo(ux, uy, erase) {
+    var x = ux * mask.width, y = uy * mask.height;
+    var step = Math.max(2, (S.brush / 100) * mask.height * 0.3);
+    if (lastPt) {
+      var dx = x - lastPt[0], dy = y - lastPt[1], n = Math.ceil(Math.hypot(dx, dy) / step);
+      for (var i = 1; i <= n; i++) stamp(lastPt[0] + dx * i / n, lastPt[1] + dy * i / n, erase);
+    } else {
+      stamp(x, y, erase);
+    }
+    lastPt = [x, y];
+    maskDirty = true;
+    if (!erase && !S.maskOn) setMaskOn(true);
+  }
+
+  // ── 圖片載入 ───────────────────────────────────────
+  var srcCanvas = document.createElement('canvas');
+
+  function setImage(source, w, h, opts) {
+    opts = opts || {};
+    var maxTex = Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048);
+    var k = Math.min(1, maxTex / Math.max(w, h));
+    S.imgW = Math.max(2, Math.round(w * k));
+    S.imgH = Math.max(2, Math.round(h * k));
+    srcCanvas.width = S.imgW; srcCanvas.height = S.imgH;
+    srcCanvas.getContext('2d').drawImage(source, 0, 0, S.imgW, S.imgH);
+    upload(0, imgTex, srcCanvas);
+    resetMask();
+    if (opts.prepaint) opts.prepaint(mctx, mask.width / S.imgW);
+    S.anchor = opts.anchor || [0.16, 0.9];
+    setMaskOn(!!opts.maskOn);
+    layout();
+  }
+
+  $('file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (f) loadFile(f);
+    e.target.value = '';
+  });
+  function loadFile(f) {
+    var url = URL.createObjectURL(f), img = new Image();
+    img.onload = function () {
+      setImage(img, img.naturalWidth, img.naturalHeight);
+      URL.revokeObjectURL(url);
+      setMode('anchor');
+      toast('已載入。先點一下飄帶被固定的那一端；背景也在動的話，用「塗抹飄帶」框出飄帶', 4200);
+    };
+    img.onerror = function () { toast('無法讀取這張圖片'); };
+    img.src = url;
+  }
+  stage.addEventListener('dragover', function (e) { e.preventDefault(); stage.classList.add('drag'); });
+  stage.addEventListener('dragleave', function () { stage.classList.remove('drag'); });
+  stage.addEventListener('drop', function (e) {
+    e.preventDefault(); stage.classList.remove('drag');
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f && /^image\//.test(f.type)) loadFile(f);
+  });
+
+  // ── 內建示範飄帶（程式繪製）──────────────────────────────
+  var DEMO_ANGLE = 0.95, DEMO_CX = 0.56, DEMO_CY = 0.5, DEMO_LEN = 1.9, DEMO_WID = 0.27;
+
+  function makeDemo() {
+    var W = 900, H = 1200, c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    var x = c.getContext('2d');
+    var g = x.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, '#24591f'); g.addColorStop(1, '#8cbf3f');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    var seed = 7;
+    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    for (var i = 0; i < 170; i++) {
+      var lx = rnd() * W, ly = rnd() * H, lr = 40 + rnd() * 70;
+      x.save(); x.translate(lx, ly); x.rotate(rnd() * 6.28);
+      x.fillStyle = 'hsl(' + (80 + rnd() * 40) + ',' + (45 + rnd() * 25) + '%,' + (22 + rnd() * 36) + '%)';
+      x.beginPath(); x.ellipse(0, 0, lr, lr * 0.45, 0, 0, 6.2832); x.fill(); x.restore();
+    }
+    // 飄帶
+    var L = DEMO_LEN * H, Wd = DEMO_WID * H;
+    x.save(); x.translate(DEMO_CX * W, DEMO_CY * H); x.rotate(DEMO_ANGLE);
+    var bands = [['#2b2b30', .045], ['#e53935', .035], ['#fb8c00', .07], ['#fdd835', .035], ['#f5f5f2', .33],
+                 ['#7cc34a', .06], ['#29b6f6', .13], ['#2f6fe0', .12], ['#3a49c8', .07], ['#2b2b30', .045]];
+    var yy = -Wd / 2;
+    bands.forEach(function (b) {
+      var h = b[1] * Wd / 0.945; // normalize
+      x.fillStyle = b[0]; x.fillRect(-L / 2, yy, L, h); yy += h;
+    });
+    x.fillStyle = '#1a1a1f'; x.font = '900 ' + Math.round(Wd * 0.3) + 'px "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    for (var j = -4; j <= 4; j++) x.fillText('流', j * Wd * 0.42, Wd * 0.04);
+    x.fillStyle = '#fff'; x.font = '600 ' + Math.round(Wd * 0.05) + 'px monospace';
+    for (var k = -9; k <= 9; k++) x.fillText('20261128', k * Wd * 0.28, -Wd / 2 + Wd * 0.022);
+    x.restore();
+    return c;
+  }
+  function paintDemoMask(ctx, sc) {
+    var H = S.imgH * sc, W = S.imgW * sc;
+    var L = DEMO_LEN * H, Wd = DEMO_WID * H;
+    ctx.save(); ctx.translate(DEMO_CX * W, DEMO_CY * H); ctx.rotate(DEMO_ANGLE);
+    for (var i = 0; i < 14; i++) {
+      var grow = (14 - i) * (Wd * 0.012);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(-L / 2, -Wd / 2 - grow + Wd * 0.012 * 4, L, Wd + 2 * grow - Wd * 0.012 * 8);
+    }
+    ctx.fillStyle = '#fff'; ctx.fillRect(-L / 2, -Wd / 2 + 2, L, Wd - 4);
+    ctx.restore();
+  }
+  function loadDemo() {
+    var d = makeDemo();
+    setImage(d, d.width, d.height, { maskOn: true, prepaint: paintDemoMask, anchor: [0.07, 0.93] });
+  }
+
+  // ── 版面 ───────────────────────────────────────────
+  function layout() {
+    var r = stage.getBoundingClientRect();
+    var maxW = Math.max(60, r.width - 16), maxH = Math.max(60, r.height - 16);
+    var sc = Math.min(maxW / S.imgW, maxH / S.imgH);
+    var cw = Math.max(2, Math.floor(S.imgW * sc)), ch = Math.max(2, Math.floor(S.imgH * sc));
+    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.min(S.imgW, Math.round(cw * dpr)); w -= w % 2;
+    var h = Math.round(w * S.imgH / S.imgW); h -= h % 2;
+    canvas.width = Math.max(2, w); canvas.height = Math.max(2, h);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    placeMarker();
+  }
+  function placeMarker() {
+    marker.style.display = S.mode === 'anchor' ? 'block' : 'none';
+    marker.style.left = (canvas.offsetLeft + S.anchor[0] * canvas.offsetWidth) + 'px';
+    marker.style.top = (canvas.offsetTop + (1 - S.anchor[1]) * canvas.offsetHeight) + 'px';
+  }
+  window.addEventListener('resize', layout);
+  if (window.ResizeObserver) new ResizeObserver(layout).observe(stage);
+
+  // ── 互動 ───────────────────────────────────────────
+  var down = false;
+  function pointerUV(e) {
+    var r = canvas.getBoundingClientRect();
+    return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+            Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+  }
+  function handle(e) {
+    var p = pointerUV(e);
+    if (S.mode === 'anchor') { S.anchor = [p[0], 1 - p[1]]; placeMarker(); }
+    else paintTo(p[0], p[1], S.mode === 'erase');
+  }
+  canvas.addEventListener('pointerdown', function (e) {
+    e.preventDefault(); down = true; lastPt = null;
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    handle(e);
+  });
+  canvas.addEventListener('pointermove', function (e) { if (down) { e.preventDefault(); handle(e); } });
+  function up() { down = false; lastPt = null; }
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+
+  function setMode(m) {
+    S.mode = m;
+    Array.prototype.forEach.call($('modeSeg').children, function (b) { b.classList.toggle('on', b.dataset.mode === m); });
+    hintEl.textContent = HINTS[m];
+    placeMarker();
+  }
+  function setMaskOn(on) {
+    S.maskOn = !!on;
+    Array.prototype.forEach.call($('maskSeg').children, function (b) { b.classList.toggle('on', (b.dataset.mask === '1') === S.maskOn); });
+  }
+  $('modeSeg').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setMode(b.dataset.mode); });
+  $('maskSeg').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setMaskOn(b.dataset.mask === '1'); });
+  $('clearMask').addEventListener('click', function () { resetMask(); toast('已清除塗抹範圍'); });
+
+  $('playBtn').addEventListener('click', function () {
+    S.playing = !S.playing; this.textContent = S.playing ? '⏸' : '▶';
+  });
+
+  // 滑桿
+  var slWrap = $('sliders');
+  SLIDERS.forEach(function (d) {
+    var lab = document.createElement('label'); lab.className = 'sl';
+    var sp = document.createElement('span'); sp.textContent = d.t;
+    var inp = document.createElement('input'); inp.type = 'range'; inp.min = 0; inp.max = d.max; inp.value = S.v[d.k];
+    var out = document.createElement('output'); out.textContent = d.f(S.v[d.k]);
+    inp.addEventListener('input', function () { S.v[d.k] = +inp.value; out.textContent = d.f(+inp.value); });
+    lab.appendChild(sp); lab.appendChild(inp); lab.appendChild(out); slWrap.appendChild(lab);
+  });
+  (function () {
+    var lab = document.createElement('label'); lab.className = 'sl'; lab.id = 'brushRow';
+    var sp = document.createElement('span'); sp.textContent = '筆刷大小';
+    var inp = document.createElement('input'); inp.type = 'range'; inp.min = 2; inp.max = 18; inp.value = S.brush;
+    var out = document.createElement('output'); out.textContent = S.brush;
+    inp.addEventListener('input', function () { S.brush = +inp.value; out.textContent = inp.value; });
+    lab.appendChild(sp); lab.appendChild(inp); lab.appendChild(out); slWrap.appendChild(lab);
+  })();
+
+  // ── 繪製迴圈 ───────────────────────────────────────
+  var last = performance.now();
+  function draw() {
+    var v = S.v;
+    gl.uniform1f(U.uPh, S.phase);
+    gl.uniform1f(U.uAspect, S.imgW / S.imgH);
+    gl.uniform1f(U.uAmp, 0.004 + v.amp / 100 * 0.09);
+    gl.uniform1f(U.uFreq, 5 + v.freq / 100 * 26);
+    gl.uniform1f(U.uWind, v.wind * Math.PI / 180);
+    gl.uniform1f(U.uShade, v.shade / 100);
+    gl.uniform1f(U.uMaskOn, S.maskOn ? 1 : 0);
+    gl.uniform1f(U.uShowMask, (S.mode !== 'anchor' && S.maskOn) ? 1 : 0);
+    gl.uniform1f(U.uReach, 0.85);
+    gl.uniform2f(U.uAnchor, S.anchor[0], S.anchor[1]);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (S.playing) S.phase += dt * (0.6 + S.v.speed / 100 * 7.4);
+    if (maskDirty) { upload(1, maskTex, mask); maskDirty = false; }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ── 錄影 ───────────────────────────────────────────
+  var recording = false, recUrl = null;
+  $('recBtn').addEventListener('click', function () {
+    if (recording) return;
+    if (!canvas.captureStream || !window.MediaRecorder) { toast('這個瀏覽器不支援錄影'); return; }
+    var types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    var mt = ''; for (var i = 0; i < types.length; i++) { if (MediaRecorder.isTypeSupported(types[i])) { mt = types[i]; break; } }
+    var rec, chunks = [];
+    try {
+      rec = new MediaRecorder(canvas.captureStream(30), mt ? { mimeType: mt, videoBitsPerSecond: 6000000 } : {});
+    } catch (e) { toast('無法開始錄影：' + e.message); return; }
+    recording = true; S.playing = true; $('playBtn').textContent = '⏸';
+    var btn = $('recBtn'), secs = 6;
+    btn.disabled = true; btn.textContent = '● 錄影中 ' + secs;
+    var iv = setInterval(function () { secs--; if (secs > 0) btn.textContent = '● 錄影中 ' + secs; }, 1000);
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = function () {
+      clearInterval(iv); recording = false; btn.disabled = false; btn.textContent = '🎬 錄影';
+      var type = rec.mimeType || mt || 'video/webm';
+      var blob = new Blob(chunks, { type: type });
+      if (!blob.size) { toast('錄影失敗（沒有資料）'); return; }
+      if (recUrl) URL.revokeObjectURL(recUrl);
+      recUrl = URL.createObjectURL(blob);
+      var ext = /mp4/.test(type) ? 'mp4' : 'webm';
+      $('vid').src = recUrl; $('dl').href = recUrl; $('dl').download = 'ribbon-wind.' + ext;
+      $('modal').style.display = 'flex';
+      $('vid').play().catch(function () {});
+    };
+    rec.start(250);
+    setTimeout(function () { if (rec.state !== 'inactive') rec.stop(); }, 6000);
+  });
+  $('closeModal').addEventListener('click', function () { $('modal').style.display = 'none'; $('vid').pause(); });
+
+  // ── 啟動 ───────────────────────────────────────────
+  setMode('anchor');
+  loadDemo();
+  requestAnimationFrame(frame);
+  window.__ribbon = { S: S, setMode: setMode };  // 方便除錯／自動測試
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
