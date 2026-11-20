@@ -604,7 +604,7 @@
     gl.uniform1f(U.uWind, v.wind * Math.PI / 180);
     gl.uniform1f(U.uShade, v.shade / 100);
     gl.uniform1f(U.uMaskOn, S.maskOn ? 1 : 0);
-    gl.uniform1f(U.uShowMask, (S.mode !== 'anchor' && S.maskOn) ? 1 : 0);
+    gl.uniform1f(U.uShowMask, (S.mode !== 'anchor' && S.maskOn && !recording) ? 1 : 0);
     gl.uniform1f(U.uReach, 0.85);
     gl.uniform2f(U.uAnchor, S.anchor[0], S.anchor[1]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
