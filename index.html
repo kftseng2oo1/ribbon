@@ -48,6 +48,7 @@
   #stage.drag { outline: 2px dashed var(--ac); outline-offset: -8px; }
   canvas { touch-action: none; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); background: #000; display: block; }
   #zoomer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transform-origin: 0 0; will-change: transform; }
+  #uiBtn { position: absolute; left: 10px; bottom: 8px; z-index: 4; display: none; background: rgba(0,0,0,.6); }
   #zoomBtn { position: absolute; right: 10px; top: 8px; z-index: 4; display: none; background: rgba(0,0,0,.6); }
   #marker {
     position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
@@ -62,7 +63,7 @@
 
   #panel {
     flex-shrink: 0; background: var(--bar); border-top: 1px solid var(--bd);
-    padding: 10px 12px 12px; max-height: 44vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 10px 12px 12px; max-height: 44vh; overflow: auto; -webkit-overflow-scrolling: touch;
   }
   .seg { display: flex; background: rgba(0,0,0,.3); border: 1px solid var(--bd); border-radius: 9px; padding: 2px; flex: 1; }
   .seg button { flex: 1; border: 0; background: transparent; padding: 7px 4px; justify-content: center; }
@@ -100,6 +101,7 @@
 
 <div id="stage">
   <div id="zoomer"><canvas id="gl"></canvas><div id="marker"></div></div>
+  <button id="uiBtn" type="button">↺ 介面大小</button>
   <button id="zoomBtn" type="button">🔍 100%</button>
   <div id="toast"></div>
 </div>
@@ -492,6 +494,34 @@
   ['gesturestart', 'gesturechange'].forEach(function (n) {
     document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false });
   });
+
+  // ── 控制面板：雙指捏合縮放介面大小 ─────────────────────
+  var panelEl = $('panel'), uiBtn = $('uiBtn'), UI = 1;
+  panelEl.style.touchAction = 'pan-y';
+  function setUI(k, save) {
+    UI = Math.min(1.5, Math.max(0.75, k));
+    panelEl.style.zoom = UI;
+    panelEl.style.maxHeight = Math.min(55, Math.round(44 * Math.max(1, UI))) + 'vh';
+    uiBtn.style.display = Math.abs(UI - 1) > 0.02 ? 'inline-flex' : 'none';
+    if (save) try { localStorage.setItem('ribbon-ui', String(UI)); } catch (_) {}
+  }
+  uiBtn.addEventListener('click', function () { setUI(1, true); });
+  try { var u0 = parseFloat(localStorage.getItem('ribbon-ui')); if (u0) setUI(u0); } catch (_) {}
+  var tp = null;
+  function tdist(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) || 1; }
+  panelEl.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 2) tp = { d: tdist(e.touches), k: UI };
+  }, { passive: true });
+  panelEl.addEventListener('touchmove', function (e) {
+    if (e.touches.length === 2 && tp) { e.preventDefault(); setUI(tp.k * tdist(e.touches) / tp.d, false); }
+  }, { passive: false });
+  panelEl.addEventListener('touchend', function (e) {
+    if (tp && e.touches.length < 2) { tp = null; setUI(UI, true); }
+  });
+  panelEl.addEventListener('wheel', function (e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault(); setUI(UI * Math.exp(-e.deltaY * 0.01), true);
+  }, { passive: false });
 
   var ptrs = {}, pinch = null;
   function pinchState() {
