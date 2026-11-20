@@ -44,9 +44,11 @@
 
   #hint { padding: 6px 12px; font-size: .75rem; color: var(--mu); text-align: center; flex-shrink: 0; min-height: 28px; }
 
-  #stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #stage { touch-action: none; overflow: hidden; position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
   #stage.drag { outline: 2px dashed var(--ac); outline-offset: -8px; }
   canvas { touch-action: none; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); background: #000; display: block; }
+  #zoomer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transform-origin: 0 0; will-change: transform; }
+  #zoomBtn { position: absolute; right: 10px; top: 8px; z-index: 4; display: none; background: rgba(0,0,0,.6); }
   #marker {
     position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
     border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 0 12px rgba(53,208,255,.9);
@@ -97,8 +99,8 @@
 <div id="hint"></div>
 
 <div id="stage">
-  <canvas id="gl"></canvas>
-  <div id="marker"></div>
+  <div id="zoomer"><canvas id="gl"></canvas><div id="marker"></div></div>
+  <button id="zoomBtn" type="button">🔍 100%</button>
   <div id="toast"></div>
 </div>
 
@@ -437,7 +439,7 @@
     var h = Math.round(w * S.imgH / S.imgW); h -= h % 2;
     canvas.width = Math.max(2, w); canvas.height = Math.max(2, h);
     gl.viewport(0, 0, canvas.width, canvas.height);
-    placeMarker();
+    placeMarker(); if (typeof applyZoom === 'function') applyZoom();
   }
   function placeMarker() {
     marker.style.display = S.mode === 'anchor' ? 'block' : 'none';
@@ -459,15 +461,70 @@
     if (S.mode === 'anchor') { S.anchor = [p[0], 1 - p[1]]; placeMarker(); }
     else paintTo(p[0], p[1], S.mode === 'erase');
   }
-  canvas.addEventListener('pointerdown', function (e) {
-    e.preventDefault(); down = true; lastPt = null;
-    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-    handle(e);
+  // ── 縮放／平移（雙指捏合；滾輪；縮放按鈕歸位）──────────
+  var zoomer = $('zoomer'), zoomBtn = $('zoomBtn');
+  var Z = { k: 1, x: 0, y: 0 };
+  function applyZoom() {
+    if (!Z) return;
+    var r = stage.getBoundingClientRect(), k = Z.k;
+    // 限制平移，讓畫面至少留在舞台內
+    Z.x = Math.min(r.width * 0.5, Math.max(r.width * (0.5 - k), Z.x));
+    Z.y = Math.min(r.height * 0.5, Math.max(r.height * (0.5 - k), Z.y));
+    if (k <= 1.001) { k = Z.k = 1; Z.x = 0; Z.y = 0; }
+    zoomer.style.transform = 'translate(' + Z.x + 'px,' + Z.y + 'px) scale(' + k + ')';
+    marker.style.transform = 'scale(' + (1 / k) + ')';
+    zoomBtn.style.display = k > 1 ? 'inline-flex' : 'none';
+    zoomBtn.textContent = '🔍 ' + Math.round(k * 100) + '%（點此還原）';
+  }
+  function zoomAt(cx, cy, nk) {  // cx, cy：相對舞台的座標
+    nk = Math.min(8, Math.max(1, nk));
+    var f = nk / Z.k;
+    Z.x = cx - (cx - Z.x) * f; Z.y = cy - (cy - Z.y) * f; Z.k = nk;
+    applyZoom();
+  }
+  zoomBtn.addEventListener('click', function () { Z.k = 1; applyZoom(); });
+  stage.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var r = stage.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, Z.k * Math.exp(-e.deltaY * 0.0015));
+  }, { passive: false });
+  // iOS Safari 的頁面縮放手勢
+  ['gesturestart', 'gesturechange'].forEach(function (n) {
+    document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false });
   });
-  canvas.addEventListener('pointermove', function (e) { if (down) { e.preventDefault(); handle(e); } });
-  function up() { down = false; lastPt = null; }
-  canvas.addEventListener('pointerup', up);
-  canvas.addEventListener('pointercancel', up);
+
+  var ptrs = {}, pinch = null;
+  function pinchState() {
+    var ids = Object.keys(ptrs), a = ptrs[ids[0]], b = ptrs[ids[1]], r = stage.getBoundingClientRect();
+    return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2 - r.left, cy: (a.y + b.y) / 2 - r.top };
+  }
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.target !== canvas && e.target !== stage && e.target !== zoomer) return;
+    e.preventDefault();
+    ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+    try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+    var n = Object.keys(ptrs).length;
+    if (n === 1) { if (e.target === canvas) { down = true; lastPt = null; handle(e); } }
+    else if (n === 2) { down = false; lastPt = null; pinch = pinchState(); }
+  });
+  stage.addEventListener('pointermove', function (e) {
+    if (!ptrs[e.pointerId]) return;
+    e.preventDefault();
+    ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (Object.keys(ptrs).length >= 2 && pinch) {
+      var cur = pinchState();
+      Z.x += cur.cx - pinch.cx; Z.y += cur.cy - pinch.cy;   // 雙指平移
+      zoomAt(cur.cx, cur.cy, Z.k * cur.d / pinch.d);         // 捏合縮放
+      pinch = cur;
+    } else if (down) handle(e);
+  });
+  function up(e) {
+    delete ptrs[e.pointerId];
+    if (Object.keys(ptrs).length < 2) pinch = null;
+    down = false; lastPt = null;
+  }
+  stage.addEventListener('pointerup', up);
+  stage.addEventListener('pointercancel', up);
 
   function setMode(m) {
     S.mode = m;
